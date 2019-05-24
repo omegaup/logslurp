@@ -110,7 +110,9 @@ func pushRequest(config *ClientConfig, log log15.Logger, logEntries []*logslurp.
 	}
 	response, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
-	log.Info("sent a chunk", "response", string(response))
+	if response != "" {
+		log.Error("sent a chunk", "response", string(response))
+	}
 
 	return nil
 }
