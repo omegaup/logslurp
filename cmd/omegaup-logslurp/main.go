@@ -20,6 +20,7 @@ import (
 
 var (
 	configPath = flag.String("config", "", "configuration file")
+	testFile   = flag.String("test-file", "", "test the config for a single file")
 )
 
 type ClientConfig struct {
@@ -152,6 +153,44 @@ func readLoop(
 	}
 }
 
+func processTestFile(path string, config *Config, log log15.Logger) error {
+	var configEntry *logslurp.ConfigEntry
+
+	for _, e := range config.Entries {
+		if e.Path == path {
+			configEntry = e
+			break
+		}
+	}
+	if configEntry == nil {
+		return errors.Errorf("could not find config entry for \"%s\"", path)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	l, err := logslurp.NewLogStream(bufio.NewReader(f), configEntry)
+	if err != nil {
+		return err
+	}
+
+	for {
+		entry, err := l.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		log.Info("read entry", "entry", entry)
+	}
+
+	return nil
+}
+
 func main() {
 	flag.Parse()
 	log := base.StderrLog()
@@ -165,6 +204,13 @@ func main() {
 	if err := readJson(*configPath, false, &config); err != nil {
 		log.Error("failed to parse config", "err", err)
 		os.Exit(1)
+	}
+
+	if *testFile != "" {
+		if err := processTestFile(*testFile, &config, log); err != nil {
+			log.Error("failed to test file", "err", err)
+		}
+		return
 	}
 
 	if config.OffsetFilename == "" {
