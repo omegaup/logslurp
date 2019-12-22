@@ -21,7 +21,7 @@ lines
 `
 
 func TestStream(t *testing.T) {
-	config := ConfigEntry{
+	config := StreamConfig{
 		Path:            "log",
 		RegexpString:    `(?ms)^(?P<ts>\d+-\d+-\d+T\d+:\d+:\d+[-+]\d+:\d+) \[(?P<lvl>[^\]]+)\]: (.*?) $`,
 		TimestampLayout: "2006-01-02T15:04:05-07:00",

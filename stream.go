@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// ConfigEntry represents an entry for one stream.
-type ConfigEntry struct {
+// StreamConfig represents an entry for one stream.
+type StreamConfig struct {
 	Path            string            `json:"path"`
 	Labels          map[string]string `json:"labels"`
 	RegexpString    string            `json:"regexp"`
@@ -61,16 +61,16 @@ type PushRequest struct {
 	Streams []*PushRequestStream `json:"streams"`
 }
 
-// A LogStream is used to parse a log given a ConfigEntry.
+// A LogStream is used to parse a log given a StreamConfig.
 type LogStream struct {
 	rd     io.RuneReader
 	regexp *regexp.Regexp
-	config *ConfigEntry
+	config *StreamConfig
 	slop   string
 }
 
 // NewLogStream returns a new instance of LogStream.
-func NewLogStream(rd io.RuneReader, config *ConfigEntry) (*LogStream, error) {
+func NewLogStream(rd io.RuneReader, config *StreamConfig) (*LogStream, error) {
 	s := &LogStream{
 		rd:     rd,
 		config: config,
