@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -21,8 +22,12 @@ import (
 )
 
 var (
+	version    = flag.Bool("version", false, "Print the version and exit")
 	configPath = flag.String("config", "", "configuration file")
 	testFile   = flag.String("test-file", "", "test the config for a single file")
+
+	// ProgramVersion is the version of the code from which the binary was built from.
+	ProgramVersion string
 )
 
 type ClientConfig struct {
@@ -202,6 +207,11 @@ func processTestFile(path string, config *Config, log log15.Logger) error {
 
 func main() {
 	flag.Parse()
+	if *version {
+		fmt.Printf("omegaup-logslurp %s\n", ProgramVersion)
+		return
+	}
+
 	log := base.StderrLog()
 
 	if *configPath == "" {
@@ -287,7 +297,10 @@ func main() {
 		streams = append(streams, s)
 	}
 
-	log.Info("Started")
+	log.Info(
+		"omegaup-logslurp ready",
+		"version", ProgramVersion,
+	)
 	daemon.SdNotify(false, "READY=1")
 
 	stopChan := make(chan os.Signal)
