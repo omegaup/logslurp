@@ -1,13 +1,15 @@
 package logslurp
 
 import (
-	"github.com/fsnotify/fsnotify"
-	"github.com/pkg/errors"
 	"io"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 	"syscall"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/inconshreveable/log15"
+	"github.com/pkg/errors"
 )
 
 func openNonBlocking(name string) (*os.File, error) {
@@ -39,6 +41,7 @@ type Tail struct {
 	name     string
 	watcher  *fsnotify.Watcher
 	chunks   chan *chunk
+	log      log15.Logger
 }
 
 var _ io.ReadCloser = (*Tail)(nil)
@@ -50,7 +53,7 @@ var _ io.ReadCloser = (*Tail)(nil)
 //
 // This means that the calls to Read() will never return EOF, unless Stop() is
 // called.
-func NewTail(name string, off int64) (*Tail, error) {
+func NewTail(name string, off int64, log log15.Logger) (*Tail, error) {
 	if resolved, err := filepath.Abs(name); err != nil {
 		return nil, err
 	} else {
@@ -64,6 +67,7 @@ func NewTail(name string, off int64) (*Tail, error) {
 		off:      off,
 		name:     name,
 		chunks:   make(chan *chunk),
+		log:      log,
 	}
 	if watcher, err := fsnotify.NewWatcher(); err != nil {
 		return nil, err
@@ -211,6 +215,7 @@ func (t *Tail) run() {
 					reportedError = err
 					return
 				} else {
+					t.log.Info("file was re-created", "path", t.name)
 					t.file = f
 				}
 				atomic.StoreInt64(&t.off, 0)

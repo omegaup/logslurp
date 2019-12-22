@@ -5,10 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
-	"github.com/inconshreveable/log15"
-	base "github.com/omegaup/go-base"
-	"github.com/omegaup/logslurp"
-	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -16,6 +12,12 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/coreos/go-systemd/v22/daemon"
+	"github.com/inconshreveable/log15"
+	base "github.com/omegaup/go-base"
+	"github.com/omegaup/logslurp"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -48,7 +50,12 @@ func (s *Stream) run() {
 	for {
 		l, err := s.logStream.Read()
 		if err != nil {
-			if err != io.EOF {
+			if err == io.EOF {
+				s.log.Error(
+					"eof while reading file",
+					"file", s.config.Path,
+				)
+			} else {
 				s.log.Error(
 					"failed to read log file",
 					"file", s.config.Path,
@@ -110,7 +117,7 @@ func pushRequest(config *ClientConfig, log log15.Logger, logEntries []*logslurp.
 	}
 	response, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
-	if response != "" {
+	if len(response) != 0 {
 		log.Error("sent a chunk", "response", string(response))
 	}
 
@@ -253,7 +260,7 @@ func main() {
 		}
 
 		off, _ := offsetMapping[s.config.Path]
-		if t, err := logslurp.NewTail(s.config.Path, off); err != nil {
+		if t, err := logslurp.NewTail(s.config.Path, off, log); err != nil {
 			log.Error(
 				"failed to open file",
 				"file", s.config.Path,
@@ -281,10 +288,13 @@ func main() {
 	}
 
 	log.Info("Started")
+	daemon.SdNotify(false, "READY=1")
 
 	stopChan := make(chan os.Signal)
 	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
 	<-stopChan
+
+	daemon.SdNotify(false, "STOPPING=1")
 	log.Info("Stopping...")
 
 	for _, s := range streams {

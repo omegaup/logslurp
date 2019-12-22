@@ -7,6 +7,8 @@ import (
 	"os"
 	"path"
 	"testing"
+
+	base "github.com/omegaup/go-base"
 )
 
 func TestTail(t *testing.T) {
@@ -23,7 +25,7 @@ func TestTail(t *testing.T) {
 		t.Errorf("Failed to create file: %v", err)
 	}
 
-	tail, err := NewTail(filename, 0)
+	tail, err := NewTail(filename, 0, base.StderrLog())
 	if err != nil {
 		t.Errorf("Failed to open file: %v", err)
 	}
