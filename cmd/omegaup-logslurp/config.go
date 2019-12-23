@@ -24,7 +24,7 @@ type logslurpConfig struct {
 func readLogslurpConfig(configPath string) (*logslurpConfig, error) {
 	config := logslurpConfig{
 		Client: clientConfig{
-			URL: "https://loki.omegaup.com/api/prom/push",
+			URL: "https://loki.omegaup.com/loki/api/v1/push",
 		},
 		OffsetFilePath: "/var/lib/omegaup/logslurp_offsets.json",
 	}

@@ -49,10 +49,10 @@ func TestStream(t *testing.T) {
 	}
 
 	expectedStringEntries := []string{
-		`{"labels":"{filename=\"log\",lvl=\"ERROR\"}","entries":[{"ts":"2019-05-13T15:13:51.000000+00:00","line":"Message 1"}]}`,
-		`{"labels":"{filename=\"log\",lvl=\"ERROR\"}","entries":[{"ts":"2019-05-13T15:13:52.000000+00:00","line":"Message 2"}]}`,
-		`{"labels":"{filename=\"log\",lvl=\"ERROR\"}","entries":[{"ts":"2019-05-13T15:13:53.000000+00:00","line":"Message 3\nin two lines"}]}`,
-		`{"labels":"{filename=\"log\",lvl=\"ERROR\"}","entries":[{"ts":"2019-05-13T15:13:54.000000+00:00","line":"Message 4\nin three\nlines"}]}`,
+		`{"stream":{"filename":"log","lvl":"ERROR"},"values":[["1557760431000000000","Message 1"]]}`,
+		`{"stream":{"filename":"log","lvl":"ERROR"},"values":[["1557760432000000000","Message 2"]]}`,
+		`{"stream":{"filename":"log","lvl":"ERROR"},"values":[["1557760433000000000","Message 3\nin two lines"]]}`,
+		`{"stream":{"filename":"log","lvl":"ERROR"},"values":[["1557760434000000000","Message 4\nin three\nlines"]]}`,
 	}
 
 	if !reflect.DeepEqual(stringEntries, expectedStringEntries) {
@@ -63,7 +63,7 @@ func TestStream(t *testing.T) {
 	if len(request.Streams) != 1 {
 		t.Errorf("failed to coalesce stream. got %v, expected 1", request)
 	}
-	expectedRequest := `{"streams":[{"labels":"{filename=\"log\",lvl=\"ERROR\"}","entries":[{"ts":"2019-05-13T15:13:51.000000+00:00","line":"Message 1"},{"ts":"2019-05-13T15:13:52.000000+00:00","line":"Message 2"},{"ts":"2019-05-13T15:13:53.000000+00:00","line":"Message 3\nin two lines"},{"ts":"2019-05-13T15:13:54.000000+00:00","line":"Message 4\nin three\nlines"}]}]}`
+	expectedRequest := `{"streams":[{"stream":{"filename":"log","lvl":"ERROR"},"values":[["1557760431000000000","Message 1"],["1557760432000000000","Message 2"],["1557760433000000000","Message 3\nin two lines"],["1557760434000000000","Message 4\nin three\nlines"]]}]}`
 	if marshaledRequest, err := json.Marshal(request); err != nil {
 		t.Fatalf("Failed to marshal: %v", err)
 	} else if string(marshaledRequest) != expectedRequest {
