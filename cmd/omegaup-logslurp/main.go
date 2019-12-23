@@ -92,8 +92,8 @@ func pushRequest(config *clientConfig, log log15.Logger, logEntries []*logslurp.
 	}
 	response, err := ioutil.ReadAll(res.Body)
 	res.Body.Close()
-	if len(response) != 0 {
-		log.Error("sent a chunk", "response", string(response))
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		return errors.Errorf("failed to push to %s (%d): %q", config.URL, res.StatusCode, string(response))
 	}
 
 	return nil
@@ -117,9 +117,10 @@ func readLoop(
 			// Once the flush interval has elapsed, send the pending log entries
 			// regardless of how many there are.
 			if err := pushRequest(config, log, logEntries); err != nil {
-				log.Error("failed to push logs", "err", err)
+				log.Error("failed to push logs", "err", err, "queue length", len(logEntries))
+			} else {
+				logEntries = nil
 			}
-			logEntries = nil
 
 		case logEntry, ok := <-outChan:
 			if ok {
@@ -127,11 +128,15 @@ func readLoop(
 			}
 			if len(logEntries) > maxBufferedMessages || !ok {
 				if err := pushRequest(config, log, logEntries); err != nil {
-					log.Error("failed to push logs", "err", err)
+					log.Error("failed to push logs", "err", err, "queue length", len(logEntries))
+				} else {
+					logEntries = nil
 				}
-				logEntries = nil
 				if !ok {
-					// The channel has been closed. Push the final log entries and exit.
+					// The channel has been closed. Exit.
+					if len(logEntries) > 0 {
+						log.Error("permanently lost some logs", "count", len(logEntries))
+					}
 					return
 				}
 			}
