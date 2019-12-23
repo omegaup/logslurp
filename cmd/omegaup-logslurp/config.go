@@ -52,10 +52,15 @@ func readLogslurpConfig(configPath string) (*logslurpConfig, error) {
 	return &config, nil
 }
 
-type offsetMapping map[string]int64
+type offsetMapping struct {
+	Offsets            map[string]int64              `json:"offsets"`
+	OrphanedLogEntries []*logslurp.PushRequestStream `json:"orphaned_log_entries,omitempty"`
+}
 
 func readOffsetMapping(offsetMappingPath string) (offsetMapping, error) {
-	offsets := make(offsetMapping)
+	offsets := offsetMapping{
+		Offsets: make(map[string]int64),
+	}
 	err := readJson(offsetMappingPath, &offsets)
 	return offsets, err
 }

@@ -103,14 +103,17 @@ func readLoop(
 	config *clientConfig,
 	log log15.Logger,
 	outChan <-chan *logslurp.PushRequestStream,
-	doneChan chan<- struct{},
+	orphanedLogEntriesChan chan<- []*logslurp.PushRequestStream,
 ) {
-	defer close(doneChan)
+	var logEntries []*logslurp.PushRequestStream
+	defer func() {
+		orphanedLogEntriesChan <- logEntries
+		close(orphanedLogEntriesChan)
+	}()
 
 	ticker := time.NewTicker(logEntryFlushInterval)
 	defer ticker.Stop()
 
-	var logEntries []*logslurp.PushRequestStream
 	for {
 		select {
 		case <-ticker.C:
@@ -134,9 +137,6 @@ func readLoop(
 				}
 				if !ok {
 					// The channel has been closed. Exit.
-					if len(logEntries) > 0 {
-						log.Error("permanently lost some logs", "count", len(logEntries))
-					}
 					return
 				}
 			}
@@ -252,10 +252,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	doneChan := make(chan struct{})
+	orphanedLogEntriesChan := make(chan []*logslurp.PushRequestStream)
 	outChan := make(chan *logslurp.PushRequestStream, 10)
 
-	go readLoop(&config.Client, log, outChan, doneChan)
+	go readLoop(&config.Client, log, outChan, orphanedLogEntriesChan)
+
+	if len(offsets.OrphanedLogEntries) > 0 {
+		for _, logEntry := range offsets.OrphanedLogEntries {
+			outChan <- logEntry
+		}
+		offsets.OrphanedLogEntries = nil
+	}
 
 	var streams []*Stream
 	for _, streamConfigEntry := range config.Streams {
@@ -275,7 +282,7 @@ func main() {
 			log:      log,
 		}
 
-		off, _ := offsets[s.config.Path]
+		off, _ := offsets.Offsets[s.config.Path]
 		if t, err := logslurp.NewTail(s.config.Path, off, log); err != nil {
 			log.Error(
 				"failed to open file",
@@ -319,10 +326,12 @@ func main() {
 	for _, s := range streams {
 		s.tail.Stop()
 		<-s.doneChan
-		offsets[s.config.Path] = s.tail.Offset()
+		offsets.Offsets[s.config.Path] = s.tail.Offset()
 	}
 	close(outChan)
-	<-doneChan
+	for orphanedLogEntries := range orphanedLogEntriesChan {
+		offsets.OrphanedLogEntries = append(offsets.OrphanedLogEntries, orphanedLogEntries...)
+	}
 
 	if err := offsets.write(config.OffsetFilePath); err != nil {
 		log.Error(
