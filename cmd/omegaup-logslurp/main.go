@@ -39,45 +39,6 @@ const (
 	logEntryFlushInterval = 5 * time.Second
 )
 
-type clientConfig struct {
-	URL string `json:"url"`
-}
-
-type logslurpConfig struct {
-	Client     clientConfig             `json:"client"`
-	OffsetPath string                   `json:"offset_file"`
-	Streams    []*logslurp.StreamConfig `json:"streams"`
-}
-
-func readLogslurpConfig(path string) (*logslurpConfig, error) {
-	var config logslurpConfig
-	err := readJson(path, &config)
-	return &config, err
-}
-
-type offsetMapping map[string]int64
-
-func readOffsetMapping(path string) (offsetMapping, error) {
-	offsets := make(offsetMapping)
-	err := readJson(path, &offsets)
-	return offsets, err
-}
-
-func (o *offsetMapping) write(path string) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return errors.Wrapf(err, "failed to open %q", path)
-	}
-	defer f.Close()
-
-	encoder := json.NewEncoder(f)
-	encoder.SetIndent("  ", "  ")
-	if err := encoder.Encode(o); err != nil {
-		return errors.Wrapf(err, "failed to write %q", path)
-	}
-	return nil
-}
-
 type Stream struct {
 	config    *logslurp.StreamConfig
 	tail      *logslurp.Tail
@@ -113,24 +74,6 @@ func (s *Stream) run() {
 	s.log.Info("finished reading", "file", s.config.Path)
 	s.tail.Close()
 	close(s.doneChan)
-}
-
-func readJson(path string, v interface{}) error {
-	f, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return err
-		}
-		return errors.Wrapf(err, "failed to open %q", path)
-	}
-	defer f.Close()
-
-	decoder := json.NewDecoder(f)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(v); err != nil {
-		return errors.Wrapf(err, "failed to parse %q", path)
-	}
-	return nil
 }
 
 func pushRequest(config *clientConfig, log log15.Logger, logEntries []*logslurp.PushRequestStream) error {
@@ -196,15 +139,15 @@ func readLoop(
 	}
 }
 
-func processSingleFile(path string, streamConfig *logslurp.StreamConfig) ([]*logslurp.PushRequestStream, error) {
-	f, err := os.Open(path)
+func processSingleFile(logPath string, streamConfig *logslurp.StreamConfig) ([]*logslurp.PushRequestStream, error) {
+	f, err := os.Open(logPath)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
 	var r io.Reader = f
-	if strings.HasSuffix(path, ".gz") {
+	if strings.HasSuffix(logPath, ".gz") {
 		gz, err := gzip.NewReader(r)
 		if err != nil {
 			return nil, err
@@ -282,23 +225,23 @@ func main() {
 		return
 	}
 
-	if config.OffsetPath == "" {
+	if config.OffsetFilePath == "" {
 		log.Error("missing 'offset_file' config entry")
 		os.Exit(1)
 	}
-	offsets, err := readOffsetMapping(config.OffsetPath)
+	offsets, err := readOffsetMapping(config.OffsetFilePath)
 	if err != nil && !os.IsNotExist(err) {
 		log.Error(
 			"failed to parse offset mapping",
-			"path", config.OffsetPath,
+			"path", config.OffsetFilePath,
 			"err", err,
 		)
 		os.Exit(1)
 	}
-	if err := offsets.write(config.OffsetPath); err != nil {
+	if err := offsets.write(config.OffsetFilePath); err != nil {
 		log.Error(
 			"failed to write offset mapping",
-			"path", config.OffsetPath,
+			"path", config.OffsetFilePath,
 			"err", err,
 		)
 		os.Exit(1)
@@ -311,6 +254,15 @@ func main() {
 
 	var streams []*Stream
 	for _, streamConfigEntry := range config.Streams {
+		if _, err := os.Stat(streamConfigEntry.Path); os.IsNotExist(err) {
+			log.Error(
+				"failed to open file",
+				"file", streamConfigEntry.Path,
+				"err", err,
+			)
+			os.Exit(1)
+		}
+
 		s := &Stream{
 			config:   streamConfigEntry,
 			doneChan: make(chan struct{}),
@@ -367,10 +319,10 @@ func main() {
 	close(outChan)
 	<-doneChan
 
-	if err := offsets.write(config.OffsetPath); err != nil {
+	if err := offsets.write(config.OffsetFilePath); err != nil {
 		log.Error(
 			"failed to write offset mapping",
-			"path", config.OffsetPath,
+			"path", config.OffsetFilePath,
 			"err", err,
 		)
 		os.Exit(1)
