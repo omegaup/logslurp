@@ -149,7 +149,7 @@ func (s *LogStream) Read() (*PushRequestStream, error) {
 		group := t.w.String()[groupPairs[2*i]:groupPairs[2*i+1]]
 		if label == "ts" {
 			if ts, err := time.Parse(s.config.TimestampLayout, group); err != nil {
-				return nil, errors.Wrapf(err, "failed to parse timestamp \"%s\"", group)
+				return nil, errors.Wrapf(err, "failed to parse timestamp %q", group)
 			} else {
 				entry.Timestamp = ts
 			}

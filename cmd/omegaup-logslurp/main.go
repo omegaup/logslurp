@@ -266,7 +266,8 @@ func main() {
 
 	var streams []*Stream
 	for _, streamConfigEntry := range config.Streams {
-		if _, err := os.Stat(streamConfigEntry.Path); os.IsNotExist(err) {
+		fileinfo, err := os.Stat(streamConfigEntry.Path)
+		if err != nil {
 			log.Error(
 				"failed to open file",
 				"file", streamConfigEntry.Path,
@@ -282,8 +283,34 @@ func main() {
 			log:      log,
 		}
 
-		off, _ := offsets.Offsets[s.config.Path]
-		if t, err := logslurp.NewTail(s.config.Path, off, log); err != nil {
+		var offset int64
+		if off, ok := offsets.Offsets[s.config.Path]; ok {
+			if stat, ok := fileinfo.Sys().(*syscall.Stat_t); ok {
+				if off.Inode != stat.Ino {
+					log.Warn(
+						"file inode has change between restarts",
+						"file", streamConfigEntry.Path,
+						"original inode", off.Inode,
+						"new inode", stat.Ino,
+					)
+				} else if off.Offset > stat.Size {
+					log.Warn(
+						"file was truncated between restarts",
+						"file", streamConfigEntry.Path,
+						"expected offset", off.Offset,
+						"file size", stat.Size,
+					)
+				} else {
+					offset = off.Offset
+				}
+			} else {
+				log.Warn(
+					"stat could not be converted to UNIX stat",
+					"file", streamConfigEntry.Path,
+				)
+			}
+		}
+		if t, err := logslurp.NewTail(s.config.Path, offset, log); err != nil {
 			log.Error(
 				"failed to open file",
 				"file", s.config.Path,
@@ -326,7 +353,10 @@ func main() {
 	for _, s := range streams {
 		s.tail.Stop()
 		<-s.doneChan
-		offsets.Offsets[s.config.Path] = s.tail.Offset()
+		offsets.Offsets[s.config.Path] = fileOffset{
+			Offset: s.tail.Offset(),
+			Inode:  s.tail.Inode(),
+		}
 	}
 	close(outChan)
 	for orphanedLogEntries := range orphanedLogEntriesChan {

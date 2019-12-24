@@ -12,16 +12,33 @@ import (
 	"github.com/pkg/errors"
 )
 
-func openNonBlocking(name string) (*os.File, error) {
+func openNonBlocking(name string) (f *os.File, filesize int64, inode uint64, err error) {
 	fd, err := syscall.Open(name, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0644)
 	if err != nil {
-		return nil, errors.Wrapf(err, "could not open \"%s\"", name)
+		return nil, 0, 0, errors.Wrapf(err, "could not open %q", name)
 	}
 	if err = syscall.SetNonblock(fd, true); err != nil {
-		return nil, errors.Wrapf(err, "could not set \"%s\" as nonblocking", name)
+		return nil, 0, 0, errors.Wrapf(err, "could not set %q as nonblocking", name)
 	}
 
-	return os.NewFile((uintptr)(fd), name), nil
+	f = os.NewFile((uintptr)(fd), name)
+	fileinfo, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, 0, 0, errors.Wrapf(err, "could not get file size for %q", name)
+	}
+
+	stat, ok := fileinfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		f.Close()
+		return nil, 0, 0, errors.Wrapf(err, "could not get file inode for %q", name)
+	}
+
+	filesize = stat.Size
+	inode = stat.Ino
+	err = nil
+
+	return
 }
 
 type chunk struct {
@@ -38,6 +55,7 @@ type Tail struct {
 	doneChan chan struct{}
 	file     *os.File
 	off      int64
+	inode    uint64
 	name     string
 	watcher  *fsnotify.Watcher
 	chunks   chan *chunk
@@ -80,23 +98,20 @@ func NewTail(name string, off int64, log log15.Logger) (*Tail, error) {
 	if err := t.watcher.Add(parent); err != nil {
 		t.Stop()
 		t.Close()
-		return nil, errors.Wrapf(err, "could not watch \"%s\"", parent)
+		return nil, errors.Wrapf(err, "could not watch %q", parent)
 	}
-	if f, err := openNonBlocking(name); err != nil {
+	if f, filesize, inode, err := openNonBlocking(name); err != nil {
 		t.Stop()
 		t.Close()
-		return nil, errors.Wrapf(err, "could not open \"%s\"", name)
+		return nil, errors.Wrapf(err, "could not open %q", name)
 	} else {
+		atomic.StoreUint64(&t.inode, inode)
 		t.file = f
-	}
-	if filesize, err := t.file.Seek(0, 2); err != nil {
-		t.Stop()
-		t.Close()
-		return nil, errors.Wrapf(err, "could not get filesize for \"%s\"", name)
-	} else if t.off > filesize {
-		// If the provided offset is larger than the file size, that means that the
-		// file was truncated. We will read from the beginning.
-		atomic.StoreInt64(&t.off, 0)
+		if t.off > filesize {
+			// If the provided offset is larger than the file size, that means that the
+			// file was truncated. We will read from the beginning.
+			atomic.StoreInt64(&t.off, 0)
+		}
 	}
 
 	return t, nil
@@ -105,6 +120,11 @@ func NewTail(name string, off int64, log log15.Logger) (*Tail, error) {
 // Offset returns the current offset of the file.
 func (t *Tail) Offset() int64 {
 	return atomic.LoadInt64(&t.off)
+}
+
+// Inode returns the inode of the currently opened file.
+func (t *Tail) Inode() uint64 {
+	return atomic.LoadUint64(&t.inode)
 }
 
 func (t *Tail) Read(p []byte) (n int, err error) {
@@ -145,7 +165,7 @@ func (t *Tail) Close() (finalErr error) {
 
 	if t.file != nil {
 		if err := t.file.Close(); err != nil {
-			finalErr = errors.Wrapf(err, "could not cleanly close \"%s\"", t.name)
+			finalErr = errors.Wrapf(err, "could not cleanly close %q", t.name)
 		}
 	}
 	return
@@ -211,14 +231,15 @@ func (t *Tail) run() {
 			if event.Op&fsnotify.Create == fsnotify.Create {
 				// But if the file was re-created, close it and open it again.
 				t.file.Close()
-				if f, err := openNonBlocking(t.name); err != nil {
+				if f, _, inode, err := openNonBlocking(t.name); err != nil {
 					reportedError = err
 					return
 				} else {
 					t.log.Info("file was re-created", "path", t.name)
 					t.file = f
+					atomic.StoreInt64(&t.off, 0)
+					atomic.StoreUint64(&t.inode, inode)
 				}
-				atomic.StoreInt64(&t.off, 0)
 			}
 
 		case err, ok := <-t.watcher.Errors:

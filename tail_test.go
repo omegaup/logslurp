@@ -29,6 +29,7 @@ func TestTail(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to open file: %v", err)
 	}
+	originalInode := tail.Inode()
 
 	doneChan := make(chan struct{})
 	go func() {
@@ -67,4 +68,9 @@ func TestTail(t *testing.T) {
 	tail.Stop()
 
 	<-doneChan
+	finalInode := tail.Inode()
+
+	if finalInode == originalInode {
+		t.Errorf("Failed to read new inode, got %v, want !%v", finalInode, originalInode)
+	}
 }
