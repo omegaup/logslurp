@@ -31,7 +31,7 @@ var _ json.Marshaler = (*PushRequestStreamEntry)(nil)
 func (e *PushRequestStreamEntry) String() string {
 	return fmt.Sprintf(
 		"{Timestamp:%s, Line: %q}",
-		e.Timestamp.Format("\"2006-01-02T15:04:05.000000-07:00\""),
+		e.Timestamp.UTC().Format("\"2006-01-02T15:04:05.000000-07:00\""),
 		e.Line,
 	)
 }
@@ -49,6 +49,16 @@ func (e *PushRequestStreamEntry) MarshalJSON() ([]byte, error) {
 type PushRequestStream struct {
 	Stream map[string]string         `json:"stream"`
 	Values []*PushRequestStreamEntry `json:"values"`
+}
+
+var _ fmt.Stringer = (*PushRequestStreamEntry)(nil)
+
+func (s *PushRequestStream) String() string {
+	return fmt.Sprintf(
+		"{Stream:%s, Values:%s}",
+		s.Stream,
+		s.Values,
+	)
 }
 
 // PushRequest is a message that can be sent to /loki/api/v1/push.

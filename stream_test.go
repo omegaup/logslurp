@@ -2,10 +2,12 @@ package logslurp
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 const logFileContents = `
@@ -68,5 +70,28 @@ func TestStream(t *testing.T) {
 		t.Fatalf("Failed to marshal: %v", err)
 	} else if string(marshaledRequest) != expectedRequest {
 		t.Fatalf("unexpected request. got %q, expected %q", string(marshaledRequest), expectedRequest)
+	}
+}
+
+func TestPushRequestStreamStringer(t *testing.T) {
+	request := NewPushRequest([]*PushRequestStream{
+		{
+			Stream: map[string]string{
+				"filename": "log",
+				"lvl":      "ERROR",
+			},
+			Values: []*PushRequestStreamEntry{
+				{
+					Timestamp: time.Unix(0, 0),
+					Line:      "Hello, world!",
+				},
+			},
+		},
+	})
+
+	gotString := fmt.Sprintf("%s", request)
+	expectedString := `&{[{Stream:map[filename:log lvl:ERROR], Values:[{Timestamp:"1970-01-01T00:00:00.000000+00:00", Line: "Hello, world!"}]}]}`
+	if gotString != expectedString {
+		t.Errorf("failed to stringify stream. got %v, expected %v", gotString, expectedString)
 	}
 }
