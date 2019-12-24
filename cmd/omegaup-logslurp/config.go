@@ -18,6 +18,7 @@ type logslurpConfig struct {
 	Client           clientConfig             `json:"client"`
 	OffsetFilePath   string                   `json:"offset_file"`
 	StreamsDirectory string                   `json:"streams_directory,omitempty"`
+	Labels           map[string]string        `json:"labels"`
 	Streams          []*logslurp.StreamConfig `json:"streams,omitempty"`
 }
 
@@ -46,6 +47,16 @@ func readLogslurpConfig(configPath string) (*logslurpConfig, error) {
 				return nil, err
 			}
 			config.Streams = append(config.Streams, &streamConfig)
+		}
+	}
+	// Merge any labels that were declared in the top-level config into all of the streams.
+	for _, stream := range config.Streams {
+		for k, v := range config.Labels {
+			if _, ok := stream.Labels[k]; ok {
+				// Do not override any labels that were set by the individual streams.
+				continue
+			}
+			stream.Labels[k] = v
 		}
 	}
 
