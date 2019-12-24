@@ -28,7 +28,7 @@ var (
 	configPath     = flag.String("config", "/etc/omegaup/logslurp/config.json", "configuration file")
 	singleFile     = flag.String("single-file", "", "run the test the config of a single file, without following")
 	singleFilePath = flag.String("single-file-path", "", "override for the single file path. useful for backfilling.")
-	noOp           = flag.Bool("no-op", false, "do not upload the log entries on single file mode")
+	noOp           = flag.Bool("no-op", false, "do not upload the log entries or write the offset file")
 
 	// ProgramVersion is the version of the code from which the binary was built from.
 	ProgramVersion string
@@ -76,8 +76,21 @@ func (s *Stream) run() {
 	close(s.doneChan)
 }
 
-func pushRequest(config *clientConfig, log log15.Logger, logEntries []*logslurp.PushRequestStream) error {
+func pushRequest(
+	config *clientConfig,
+	noOp bool,
+	log log15.Logger,
+	logEntries []*logslurp.PushRequestStream,
+) error {
 	if len(logEntries) == 0 {
+		return nil
+	}
+
+	if noOp {
+		log.Info(
+			"pushing log entries",
+			"entries", logEntries,
+		)
 		return nil
 	}
 
@@ -101,6 +114,7 @@ func pushRequest(config *clientConfig, log log15.Logger, logEntries []*logslurp.
 
 func readLoop(
 	config *clientConfig,
+	noOp bool,
 	log log15.Logger,
 	outChan <-chan *logslurp.PushRequestStream,
 	orphanedLogEntriesChan chan<- []*logslurp.PushRequestStream,
@@ -119,7 +133,7 @@ func readLoop(
 		case <-ticker.C:
 			// Once the flush interval has elapsed, send the pending log entries
 			// regardless of how many there are.
-			if err := pushRequest(config, log, logEntries); err != nil {
+			if err := pushRequest(config, noOp, log, logEntries); err != nil {
 				log.Error("failed to push logs", "err", err, "queue length", len(logEntries))
 			} else {
 				logEntries = nil
@@ -130,7 +144,7 @@ func readLoop(
 				logEntries = append(logEntries, logEntry)
 			}
 			if len(logEntries) > maxBufferedMessages || !ok {
-				if err := pushRequest(config, log, logEntries); err != nil {
+				if err := pushRequest(config, noOp, log, logEntries); err != nil {
 					log.Error("failed to push logs", "err", err, "queue length", len(logEntries))
 				} else {
 					logEntries = nil
@@ -222,7 +236,7 @@ func main() {
 				log.Info("read entry", "entry", logEntry)
 			}
 		} else {
-			if err := pushRequest(&config.Client, log, logEntries); err != nil {
+			if err := pushRequest(&config.Client, false, log, logEntries); err != nil {
 				log.Error("failed to push logs", "err", err)
 			}
 		}
@@ -243,19 +257,21 @@ func main() {
 		)
 		os.Exit(1)
 	}
-	if err := offsets.write(config.OffsetFilePath); err != nil {
-		log.Error(
-			"failed to write offset mapping",
-			"path", config.OffsetFilePath,
-			"err", err,
-		)
-		os.Exit(1)
+	if !*noOp {
+		if err := offsets.write(config.OffsetFilePath); err != nil {
+			log.Error(
+				"failed to write offset mapping",
+				"path", config.OffsetFilePath,
+				"err", err,
+			)
+			os.Exit(1)
+		}
 	}
 
 	orphanedLogEntriesChan := make(chan []*logslurp.PushRequestStream)
 	outChan := make(chan *logslurp.PushRequestStream, 10)
 
-	go readLoop(&config.Client, log, outChan, orphanedLogEntriesChan)
+	go readLoop(&config.Client, *noOp, log, outChan, orphanedLogEntriesChan)
 
 	if len(offsets.OrphanedLogEntries) > 0 {
 		for _, logEntry := range offsets.OrphanedLogEntries {
@@ -363,13 +379,20 @@ func main() {
 		offsets.OrphanedLogEntries = append(offsets.OrphanedLogEntries, orphanedLogEntries...)
 	}
 
-	if err := offsets.write(config.OffsetFilePath); err != nil {
-		log.Error(
-			"failed to write offset mapping",
-			"path", config.OffsetFilePath,
-			"err", err,
+	if *noOp {
+		log.Info(
+			"writing offset mapping",
+			"contents", offsets,
 		)
-		os.Exit(1)
+	} else {
+		if err := offsets.write(config.OffsetFilePath); err != nil {
+			log.Error(
+				"failed to write offset mapping",
+				"path", config.OffsetFilePath,
+				"err", err,
+			)
+			os.Exit(1)
+		}
 	}
 
 	log.Info("Stopped gracefully")
