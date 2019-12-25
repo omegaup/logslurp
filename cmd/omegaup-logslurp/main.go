@@ -158,10 +158,16 @@ func readLoop(
 	}
 }
 
-func processSingleFile(logPath string, streamConfig *logslurp.StreamConfig) ([]*logslurp.PushRequestStream, error) {
+func processSingleFile(
+	config *clientConfig,
+	noOp bool,
+	log log15.Logger,
+	logPath string,
+	streamConfig *logslurp.StreamConfig,
+) error {
 	f, err := os.Open(logPath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer f.Close()
 
@@ -169,7 +175,7 @@ func processSingleFile(logPath string, streamConfig *logslurp.StreamConfig) ([]*
 	if strings.HasSuffix(logPath, ".gz") {
 		gz, err := gzip.NewReader(r)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		defer gz.Close()
 		r = gz
@@ -177,7 +183,7 @@ func processSingleFile(logPath string, streamConfig *logslurp.StreamConfig) ([]*
 
 	l, err := logslurp.NewLogStream(bufio.NewReader(r), streamConfig)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var logEntries []*logslurp.PushRequestStream
@@ -187,11 +193,22 @@ func processSingleFile(logPath string, streamConfig *logslurp.StreamConfig) ([]*
 			if err == io.EOF {
 				break
 			}
-			return nil, errors.Wrap(err, "failed to read a log entry")
+			return errors.Wrap(err, "failed to read a log entry")
 		}
 		logEntries = append(logEntries, logEntry)
+		if len(logEntries) > maxBufferedMessages {
+			if err := pushRequest(config, noOp, log, logEntries); err != nil {
+				log.Error("failed to push logs", "err", err, "queue length", len(logEntries))
+			}
+			logEntries = nil
+		}
 	}
-	return logEntries, nil
+	if len(logEntries) > 0 {
+		if err := pushRequest(config, noOp, log, logEntries); err != nil {
+			return errors.Wrap(err, "failed to push logs")
+		}
+	}
+	return nil
 }
 
 func main() {
@@ -226,19 +243,9 @@ func main() {
 		if *singleFilePath == "" {
 			*singleFilePath = *singleFile
 		}
-		logEntries, err := processSingleFile(*singleFilePath, streamConfig)
-		if err != nil {
+		if err := processSingleFile(&config.Client, *noOp, log, *singleFilePath, streamConfig); err != nil {
 			log.Error("failed to test file", "path", *singleFilePath, "err", err)
 			os.Exit(1)
-		}
-		if *noOp {
-			for _, logEntry := range logEntries {
-				log.Info("read entry", "entry", logEntry)
-			}
-		} else {
-			if err := pushRequest(&config.Client, false, log, logEntries); err != nil {
-				log.Error("failed to push logs", "err", err)
-			}
 		}
 
 		return
