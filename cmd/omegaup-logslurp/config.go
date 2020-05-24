@@ -29,7 +29,7 @@ func readLogslurpConfig(configPath string) (*logslurpConfig, error) {
 		},
 		OffsetFilePath: "/var/lib/omegaup/logslurp_offsets.json",
 	}
-	if err := readJson(configPath, &config); err != nil {
+	if err := readJSON(configPath, &config); err != nil {
 		return nil, err
 	}
 	if config.StreamsDirectory != "" {
@@ -43,7 +43,7 @@ func readLogslurpConfig(configPath string) (*logslurpConfig, error) {
 				continue
 			}
 			var streamConfig logslurp.StreamConfig
-			if err := readJson(path.Join(config.StreamsDirectory, directoryEntry.Name()), &streamConfig); err != nil {
+			if err := readJSON(path.Join(config.StreamsDirectory, directoryEntry.Name()), &streamConfig); err != nil {
 				return nil, err
 			}
 			config.Streams = append(config.Streams, &streamConfig)
@@ -77,7 +77,7 @@ func readOffsetMapping(offsetMappingPath string) (offsetMapping, error) {
 	offsets := offsetMapping{
 		Offsets: make(map[string]fileOffset),
 	}
-	err := readJson(offsetMappingPath, &offsets)
+	err := readJSON(offsetMappingPath, &offsets)
 	return offsets, err
 }
 
@@ -96,7 +96,7 @@ func (o *offsetMapping) write(offsetMappingPath string) error {
 	return nil
 }
 
-func readJson(jsonPath string, v interface{}) error {
+func readJSON(jsonPath string, v interface{}) error {
 	f, err := os.Open(jsonPath)
 	if err != nil {
 		if os.IsNotExist(err) {

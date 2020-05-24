@@ -39,6 +39,7 @@ const (
 	logEntryFlushInterval = 5 * time.Second
 )
 
+// Stream represents the streamed version of a log file.
 type Stream struct {
 	config    *logslurp.StreamConfig
 	tail      *logslurp.Tail

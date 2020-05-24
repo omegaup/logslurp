@@ -36,6 +36,7 @@ func (e *PushRequestStreamEntry) String() string {
 	)
 }
 
+// MarshalJSON returns the JSON encoding of the PushRequestStreamEntry.
 func (e *PushRequestStreamEntry) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf(
 		"[\"%d\", %q]",
@@ -83,11 +84,11 @@ func NewLogStream(rd io.RuneReader, config *StreamConfig) (*LogStream, error) {
 		rd:     rd,
 		config: config,
 	}
-	if r, err := regexp.Compile(s.config.RegexpString); err != nil {
+	r, err := regexp.Compile(s.config.RegexpString)
+	if err != nil {
 		return nil, err
-	} else {
-		s.regexp = r
 	}
+	s.regexp = r
 	return s, nil
 }
 
@@ -158,11 +159,11 @@ func (s *LogStream) Read() (*PushRequestStream, error) {
 		}
 		group := t.w.String()[groupPairs[2*i]:groupPairs[2*i+1]]
 		if label == "ts" {
-			if ts, err := time.Parse(s.config.TimestampLayout, group); err != nil {
+			ts, err := time.Parse(s.config.TimestampLayout, group)
+			if err != nil {
 				return nil, errors.Wrapf(err, "failed to parse timestamp %q", group)
-			} else {
-				entry.Timestamp = ts
 			}
+			entry.Timestamp = ts
 		} else if label != "" {
 			labels[label] = group
 		} else {
