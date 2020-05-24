@@ -72,11 +72,11 @@ var _ io.ReadCloser = (*Tail)(nil)
 // This means that the calls to Read() will never return EOF, unless Stop() is
 // called.
 func NewTail(name string, off int64, log log15.Logger) (*Tail, error) {
-	if resolved, err := filepath.Abs(name); err != nil {
+	resolved, err := filepath.Abs(name)
+	if err != nil {
 		return nil, err
-	} else {
-		name = resolved
 	}
+	name = resolved
 	parent := filepath.Dir(name)
 
 	t := &Tail{
@@ -87,11 +87,11 @@ func NewTail(name string, off int64, log log15.Logger) (*Tail, error) {
 		chunks:   make(chan *chunk),
 		log:      log,
 	}
-	if watcher, err := fsnotify.NewWatcher(); err != nil {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
 		return nil, err
-	} else {
-		t.watcher = watcher
 	}
+	t.watcher = watcher
 
 	go t.run()
 
@@ -100,20 +100,20 @@ func NewTail(name string, off int64, log log15.Logger) (*Tail, error) {
 		t.Close()
 		return nil, errors.Wrapf(err, "could not watch %q", parent)
 	}
-	if f, filesize, inode, err := openNonBlocking(name); err != nil {
+	f, filesize, inode, err := openNonBlocking(name)
+	if err != nil {
 		t.Stop()
 		t.Close()
 		return nil, errors.Wrapf(err, "could not open %q", name)
-	} else {
-		atomic.StoreUint64(&t.inode, inode)
-		t.file = f
-		if t.off > filesize {
-			// If the provided offset is larger than the file size, that means that the
-			// file was truncated. We will read from the beginning.
-			atomic.StoreInt64(&t.off, 0)
-		}
 	}
 
+	atomic.StoreUint64(&t.inode, inode)
+	t.file = f
+	if t.off > filesize {
+		// If the provided offset is larger than the file size, that means that the
+		// file was truncated. We will read from the beginning.
+		atomic.StoreInt64(&t.off, 0)
+	}
 	return t, nil
 }
 
@@ -231,15 +231,15 @@ func (t *Tail) run() {
 			if event.Op&fsnotify.Create == fsnotify.Create {
 				// But if the file was re-created, close it and open it again.
 				t.file.Close()
-				if f, _, inode, err := openNonBlocking(t.name); err != nil {
+				f, _, inode, err := openNonBlocking(t.name)
+				if err != nil {
 					reportedError = err
 					return
-				} else {
-					t.log.Info("file was re-created", "path", t.name)
-					t.file = f
-					atomic.StoreInt64(&t.off, 0)
-					atomic.StoreUint64(&t.inode, inode)
 				}
+				t.log.Info("file was re-created", "path", t.name)
+				t.file = f
+				atomic.StoreInt64(&t.off, 0)
+				atomic.StoreUint64(&t.inode, inode)
 			}
 
 		case err, ok := <-t.watcher.Errors:
