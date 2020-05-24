@@ -32,16 +32,10 @@ func TestTail(t *testing.T) {
 	originalInode := tail.Inode()
 
 	doneChan := make(chan struct{})
+	var buf bytes.Buffer
 	go func() {
-		var buf bytes.Buffer
 		if _, err := io.Copy(&buf, tail); err != nil {
 			t.Errorf("Failed to read file: %v", err)
-		}
-		if err := tail.Close(); err != nil {
-			t.Errorf("Failed to close file: %v", err)
-		}
-		if buf.String() != "1\n2\n3\n" {
-			t.Errorf("Failed to read file, got %q, want %q", buf.String(), "1\n2\n3\n")
 		}
 		close(doneChan)
 	}()
@@ -68,8 +62,34 @@ func TestTail(t *testing.T) {
 	tail.Stop()
 
 	<-doneChan
+	if err := tail.Close(); err != nil {
+		t.Errorf("Failed to close file: %v", err)
+	}
 	finalInode := tail.Inode()
 
+	// There is a small problem here: tail.Stop() immediately stops reading from
+	// the inotify stream. There is no easy way to synchronize both events
+	// without poking into the implementation details of Tail.
+	//
+	// It is completely valid to have the contents of the stream be "1\n",
+	// "1\n2\n", and "1\n\2\n3\n". In the two versions, there is no guarantee
+	// about what the value of the final inode should be, since those events
+	// could feasibly appear in the stream after calling `tail.Stop()`.
+	if buf.String() == "1\n" {
+		t.Logf("Very short version detected, inode should still be the old one")
+		if finalInode != originalInode {
+			t.Errorf("Failed to detect the new inode, got %v, want %v", finalInode, originalInode)
+		}
+		return
+	}
+	if buf.String() == "1\n2\n" {
+		t.Logf("Short version detected, no guarantee about the inode")
+		return
+	}
+
+	if buf.String() != "1\n2\n3\n" {
+		t.Errorf("Failed to read file, got %q, want %q", buf.String(), "1\n2\n3\n")
+	}
 	if finalInode == originalInode {
 		t.Errorf("Failed to read new inode, got %v, want !%v", finalInode, originalInode)
 	}

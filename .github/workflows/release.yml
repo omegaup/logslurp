@@ -22,7 +22,7 @@ jobs:
         id: go
 
       - name: Get dependencies
-        run: go get -tags=static -t -v ./...
+        run: go get -t -v ./...
 
       - name: Bump version and push tag
         id: bump-version
@@ -37,7 +37,6 @@ jobs:
           mkdir -p artifacts/usr/bin/
           go build -o artifacts/usr/bin/omegaup-logslurp \
             -ldflags "-X main.ProgramVersion=${{ steps.bump-version.outputs.tag }}" \
-            -tags=static \
             github.com/omegaup/logslurp/cmd/omegaup-logslurp
 
       - name: Package
