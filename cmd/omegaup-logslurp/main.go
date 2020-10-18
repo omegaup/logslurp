@@ -82,35 +82,43 @@ func pushRequest(
 	noOp bool,
 	log log15.Logger,
 	logEntries []*logslurp.PushRequestStream,
-) error {
-	if len(logEntries) == 0 {
-		return nil
-	}
-
+) ([]*logslurp.PushRequestStream, error) {
 	if noOp {
 		log.Info(
 			"pushing log entries",
 			"entries", logEntries,
 		)
-		return nil
+		return nil, nil
 	}
 
-	buf, err := json.Marshal(logslurp.NewPushRequest(logEntries))
-	if err != nil {
-		return errors.Wrap(err, "failed to marshal json")
+	for len(logEntries) > 0 {
+		var chunk, nextLogEntries []*logslurp.PushRequestStream
+		if len(logEntries) > maxBufferedMessages {
+			chunk = logEntries[:maxBufferedMessages]
+			nextLogEntries = logEntries[maxBufferedMessages:]
+		} else {
+			chunk = logEntries
+		}
+
+		buf, err := json.Marshal(logslurp.NewPushRequest(chunk))
+		if err != nil {
+			return logEntries, errors.Wrap(err, "failed to marshal json")
+		}
+
+		res, err := http.Post(config.URL, "application/json", bytes.NewReader(buf))
+		if err != nil {
+			return logEntries, errors.Wrapf(err, "failed to push to %s", config.URL)
+		}
+		response, err := ioutil.ReadAll(res.Body)
+		res.Body.Close()
+		if res.StatusCode < 200 || res.StatusCode > 299 {
+			return logEntries, errors.Errorf("failed to push to %s (%d): %q", config.URL, res.StatusCode, string(response))
+		}
+
+		logEntries = nextLogEntries
 	}
 
-	res, err := http.Post(config.URL, "application/json", bytes.NewReader(buf))
-	if err != nil {
-		return errors.Wrapf(err, "failed to push to %s", config.URL)
-	}
-	response, err := ioutil.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return errors.Errorf("failed to push to %s (%d): %q", config.URL, res.StatusCode, string(response))
-	}
-
-	return nil
+	return logEntries, nil
 }
 
 func readLoop(
@@ -129,15 +137,16 @@ func readLoop(
 	ticker := time.NewTicker(logEntryFlushInterval)
 	defer ticker.Stop()
 
+	var err error
+
 	for {
 		select {
 		case <-ticker.C:
 			// Once the flush interval has elapsed, send the pending log entries
 			// regardless of how many there are.
-			if err := pushRequest(config, noOp, log, logEntries); err != nil {
+			logEntries, err = pushRequest(config, noOp, log, logEntries)
+			if err != nil {
 				log.Error("failed to push logs", "err", err, "queue length", len(logEntries))
-			} else {
-				logEntries = nil
 			}
 
 		case logEntry, ok := <-outChan:
@@ -145,10 +154,9 @@ func readLoop(
 				logEntries = append(logEntries, logEntry)
 			}
 			if len(logEntries) > maxBufferedMessages || !ok {
-				if err := pushRequest(config, noOp, log, logEntries); err != nil {
+				logEntries, err = pushRequest(config, noOp, log, logEntries)
+				if err != nil {
 					log.Error("failed to push logs", "err", err, "queue length", len(logEntries))
-				} else {
-					logEntries = nil
 				}
 				if !ok {
 					// The channel has been closed. Exit.
@@ -198,14 +206,15 @@ func processSingleFile(
 		}
 		logEntries = append(logEntries, logEntry)
 		if len(logEntries) > maxBufferedMessages {
-			if err := pushRequest(config, noOp, log, logEntries); err != nil {
+			logEntries, err = pushRequest(config, noOp, log, logEntries)
+			if err != nil {
 				log.Error("failed to push logs", "err", err, "queue length", len(logEntries))
 			}
-			logEntries = nil
 		}
 	}
 	if len(logEntries) > 0 {
-		if err := pushRequest(config, noOp, log, logEntries); err != nil {
+		logEntries, err = pushRequest(config, noOp, log, logEntries)
+		if err != nil {
 			return errors.Wrap(err, "failed to push logs")
 		}
 	}
