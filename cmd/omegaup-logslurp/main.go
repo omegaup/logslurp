@@ -111,7 +111,12 @@ func pushRequest(
 		}
 		response, err := ioutil.ReadAll(res.Body)
 		res.Body.Close()
-		if res.StatusCode < 200 || res.StatusCode > 299 {
+		if res.StatusCode == 400 && strings.Contains(string(response), "entry out of order") {
+			log.Info(
+				"entries out of order. ignoring",
+				"response", string(response),
+			)
+		} else if res.StatusCode < 200 || res.StatusCode > 299 {
 			return logEntries, errors.Errorf("failed to push to %s (%d): %q", config.URL, res.StatusCode, string(response))
 		}
 
