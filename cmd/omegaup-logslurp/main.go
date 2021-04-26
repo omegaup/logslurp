@@ -18,7 +18,7 @@ import (
 
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/inconshreveable/log15"
-	base "github.com/omegaup/go-base"
+	base "github.com/omegaup/go-base/v2"
 	"github.com/omegaup/logslurp"
 	"github.com/pkg/errors"
 )
@@ -233,14 +233,13 @@ func main() {
 		return
 	}
 
-	log := base.StderrLog()
-
 	config, err := readLogslurpConfig(*configPath)
 	if err != nil {
-		log.Error("failed to parse config", "err", err)
+		fmt.Printf("failed to parse config: %v", err)
 		os.Exit(1)
 	}
 
+	log := base.StderrLog(config.Logging.JSON)
 	if *singleFile != "" {
 		var streamConfig *logslurp.StreamConfig
 
