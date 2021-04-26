@@ -14,12 +14,17 @@ type clientConfig struct {
 	URL string `json:"url"`
 }
 
+type loggingConfig struct {
+	JSON bool `json:"json,omitempty"`
+}
+
 type logslurpConfig struct {
 	Client           clientConfig             `json:"client"`
 	OffsetFilePath   string                   `json:"offset_file"`
 	StreamsDirectory string                   `json:"streams_directory,omitempty"`
 	Labels           map[string]string        `json:"labels"`
 	Streams          []*logslurp.StreamConfig `json:"streams,omitempty"`
+	Logging          loggingConfig            `json:"logging,omitempty"`
 }
 
 func readLogslurpConfig(configPath string) (*logslurpConfig, error) {
